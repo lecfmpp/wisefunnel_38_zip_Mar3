@@ -1,0 +1,12 @@
+# Netlify configuration for the reverse proxy site.
+
+[build]
+  # The `publish` directory points to a directory containing a placeholder index.html
+  publish = "public"
+
+[[redirects]]
+  # Proxy all incoming requests to your main application.
+  from = "/*"
+  to = "https://wisefunnel-v36-69286814-e438f.web.app/:splat"
+  status = 200
+  force = true

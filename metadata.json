@@ -1,0 +1,7 @@
+{
+  "name": "Wisefunnel V36- Feb 18 (14:37)",
+  "description": "The next-generation funnel builder for agencies. Build high-converting funnels with integrated quiz logic and landing pages in a single interface.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}

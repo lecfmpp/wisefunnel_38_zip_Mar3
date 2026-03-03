@@ -1,0 +1,11 @@
+steps:
+  # Build the container image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/exalted-mode-462602-k2/wisefunnel-manual:latest', '.']
+
+  # Push the image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/exalted-mode-462602-k2/wisefunnel-manual:latest']
+
+images:
+  - 'gcr.io/exalted-mode-462602-k2/wisefunnel-manual:latest'
