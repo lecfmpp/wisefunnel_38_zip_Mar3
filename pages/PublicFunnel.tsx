@@ -66,20 +66,33 @@ const PublicFunnel: React.FC<PublicFunnelProps> = ({ domainSlug }) => {
         return () => window.removeEventListener('resize', handleResize);
     }, [searchParams]);
 
-    // Track page visits
+    // Track funnel and page visits
     useEffect(() => {
         if (funnel?.id && activePage?.id && !isPreview) {
             const recordVisit = async () => {
-                const sessionKey = `wf_v_p_${activePage.id}`;
-                // Check if visit for this page in this session is already recorded
-                if (sessionStorage.getItem(sessionKey)) return;
+                const pageSessionKey = `wf_v_p_${activePage.id}`;
+                const funnelSessionKey = `wf_v_f_${funnel.id}`;
                 
                 try {
-                    // Call the Supabase RPC function to increment page visits
-                    await supabase.rpc('increment_funnel_page_visits', { page_id_input: activePage.id });
-                    sessionStorage.setItem(sessionKey, 'true'); // Mark as visited for this session
+                    if (!sessionStorage.getItem(funnelSessionKey)) {
+                        const { error: funnelVisitError } = await supabase.rpc('increment_funnel_visits', { f_id: funnel.id });
+                        if (!funnelVisitError) {
+                            sessionStorage.setItem(funnelSessionKey, 'true');
+                        } else {
+                            console.error('Funnel visit recording error:', funnelVisitError);
+                        }
+                    }
+
+                    if (!sessionStorage.getItem(pageSessionKey)) {
+                        const { error: pageVisitError } = await supabase.rpc('increment_funnel_page_visits', { p_id: activePage.id });
+                        if (!pageVisitError) {
+                            sessionStorage.setItem(pageSessionKey, 'true');
+                        } else {
+                            console.error('Page visit recording error:', pageVisitError);
+                        }
+                    }
                 } catch (err) {
-                    console.error("Page visit recording error:", err);
+                    console.error("Visit recording error:", err);
                 }
             };
             recordVisit();
@@ -137,7 +150,7 @@ const PublicFunnel: React.FC<PublicFunnelProps> = ({ domainSlug }) => {
                     selectedPage = pages.find(p => p.type === 'start') || pages[0];
                 }
 
-                setFunnel({ ...funnelData, pages });
+                setFunnel({ ...funnelData, workspaceId: funnelData.workspace_id, pages });
                 setActivePage(selectedPage);
 
             } catch (err: any) {
@@ -220,7 +233,7 @@ const PublicFunnel: React.FC<PublicFunnelProps> = ({ domainSlug }) => {
             const domain = window.location.hostname; // Get current domain
             const { data, error } = await supabase.from('leads').insert([{
                 funnel_id: resolvedFunnelId,
-                workspace_id: funnel.workspaceId,
+                workspace_id: funnel.workspaceId || (funnel as any).workspace_id,
                 form_data: finalAnswers,
                 status: 'new', // Default status
                 domain: domain // Store the domain
@@ -266,33 +279,27 @@ const PublicFunnel: React.FC<PublicFunnelProps> = ({ domainSlug }) => {
         const currentIndex = funnel.pages.findIndex(p => p.id === activePage.id);
         const nextPageIndex = currentIndex + 1;
         const isLastPage = nextPageIndex >= funnel.pages.length;
+        const nextPage = !isLastPage ? funnel.pages[nextPageIndex] : null;
+        const shouldAttemptLeadSync =
+            activePage.type !== 'end' &&
+            !isPreview &&
+            !sessionStorage.getItem(`wf_active_lead_${resolvedFunnelId}`) &&
+            !isSubmittingLead.current &&
+            (isLastPage || nextPage?.type === 'end');
     
         console.log("Page Details:", {
             currentPage: activePage.title,
-            isLastPage: isLastPage
+            isLastPage: isLastPage,
+            nextPageType: nextPage?.type,
+            shouldAttemptLeadSync
         });
-    
-        if (isLastPage) {
-            console.log(`%c--- Checking Lead Sync Conditions ---`, 'color: #f59e0b; font-weight: bold;');
-            const leadIdInSession = sessionStorage.getItem(`wf_active_lead_${resolvedFunnelId}`);
-            
-            const conditions = {
-                'activePage.type !== "end"': activePage.type !== 'end',
-                '!leadIdInSession': !leadIdInSession,
-                '!isSubmittingLead.current': !isSubmittingLead.current,
-                '!isPreview': !isPreview
-            };
-    
-            console.table(conditions);
-    
-            if (activePage.type !== 'end' && !leadIdInSession && !isSubmittingLead.current && !isPreview) {
-                console.log("%cAll conditions met. Syncing lead...", 'color: #10b981; font-weight: bold;');
-                await syncLead(currentAnswers);
-            } else {
-                console.log("%cSkipping lead sync. One or more conditions not met.", 'color: #ef4444; font-weight: bold;');
-            }
-        } else {
-            const nextPage = funnel.pages[nextPageIndex];
+
+        if (shouldAttemptLeadSync) {
+            console.log("%cLead sync conditions met before page transition. Syncing lead...", 'color: #10b981; font-weight: bold;');
+            await syncLead(currentAnswers);
+        }
+
+        if (!isLastPage && nextPage) {
             const funnelSlug = funnel.slug || funnel.name.toLowerCase().replace(/\s+/g, '-');
             const pageSlug = nextPage.slug || nextPage.title.toLowerCase().replace(/\s+/g, '-');
             const path = `/funnel/${funnel.id}/${funnelSlug}/${pageSlug}`;
