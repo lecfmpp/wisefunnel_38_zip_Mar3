@@ -285,7 +285,7 @@ const PublicFunnel: React.FC<PublicFunnelProps> = ({ domainSlug }) => {
     
             console.table(conditions);
     
-            if (activePage.type !== 'end' && !leadIdInSession && !isSubmittingLead.current && !isPreview) {
+            if (!leadIdInSession && !isSubmittingLead.current && !isPreview) {
                 console.log("%cAll conditions met. Syncing lead...", 'color: #10b981; font-weight: bold;');
                 await syncLead(currentAnswers);
             } else {
