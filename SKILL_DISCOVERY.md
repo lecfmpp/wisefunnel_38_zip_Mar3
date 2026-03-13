@@ -145,17 +145,29 @@ Task: "Send an email to the team."
 2. Read `SKILL.md` → use `gog gmail send --to ... --subject ... --body ...`
 3. Done.
 
-## Checklist
+### Example 4: Checking UI / Browser / Mission Control
 
-Before starting any task, mentally run:
+Task: "Check what's on screen" or "Verify the UI state" or "Look at Mission Control"
 
-- [ ] Did I check the system `available_skills` list?
-- [ ] Did I search the OpenClaw docs for a native solution?
-- [ ] Did I search Clawhub for a community skill if needed?
-- [ ] Did I verify the skill's safety and reputation?
-- [ ] Did I install/update the skill properly?
-- [ ] Did I document this new capability?
-- [ ] Did I share with other agents if relevant?
+1. **Always use `peekaboo` skill** (screenshot/UI automation) to capture visual evidence.
+2. Read `SKILL.md` for `peekaboo` to understand capture modes (full screen, region, window).
+3. For quick screenshots: `peekaboo screenshot` (or `peekaboo capture`).
+4. Send the screenshot to Leandro via Slack or save for review.
+5. If the task involves repeated checks or UI interaction, consider using `peekaboo` automation features.
+6. Document in `TOOLS.md` any specific display/window names or regions of interest.
+
+## Protocol Summary (TL;DR)
+
+**For every new task:**
+
+1. **Check available skills** → Use if suitable
+2. **Search docs.openclaw.ai** → Find native ways
+3. **Search Clawhub** → Install safe skills
+4. **For any visual check (browser, UI, Mission Control) → ALWAYS use `peekaboo` to screenshot.**
+5. **Document** in `TOOLS.md`
+6. **Share** with team
+
+**Safety first:** Never install suspicious skills. When in doubt, ask.
 
 ## Notes
 
