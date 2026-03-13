@@ -2,8 +2,11 @@
 
 # Periodic checks during heartbeat polls
 
-- Run the email notification script: `python3 ~/.openclaw/workspace/email-notify.py`
-  - It will automatically send Slack DMs if new emails arrive
-  - Report any errors from the script
+Run the unified digest script that combines email, calendar, and system status:
 
-- Check calendar for upcoming events in the next 2 hours (using `gog` or `himalaya` calendar if available)
+- `python3 ~/.openclaw/workspace/heartbeat-digest.py`
+  - Fetches new email (Himalaya) from last 30 min
+  - Lists upcoming calendar events (next 48h) where claudio@wiseform.io is attendee
+  - Checks system health and agent status
+  - Sends a summary to Leandro via Slack
+  - Reports errors if any step fails
