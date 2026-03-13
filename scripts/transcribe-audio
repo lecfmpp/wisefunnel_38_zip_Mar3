@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Transcribe an audio file using whisper-cli (local, offline)
+# Usage: transcribe-audio /path/to/audio.mp3
+
+set -euo pipefail
+
+INPUT="$1"
+MODEL="${WHISPER_MODEL:-$HOME/.cache/whisper-cpp/ggml-base.bin}"
+TMP_WAV=$(mktemp -t whisper)
+
+# Cleanup on exit
+cleanup() {
+  rm -f "$TMP_WAV" "${TMP_WAV}.txt"
+}
+trap cleanup EXIT
+
+# Convert to 16kHz mono WAV if needed
+EXT="${INPUT##*.}"
+if [[ "$EXT" != "wav" ]]; then
+  ffmpeg -y -i "$INPUT" -ar 16000 -ac 1 -c:a pcm_s16le "$TMP_WAV.wav" >/dev/null 2>&1
+  WHISPER_INPUT="$TMP_WAV.wav"
+else
+  WHISPER_INPUT="$INPUT"
+fi
+
+# Transcribe (output goes to <input>.txt)
+whisper-cli -m "$MODEL" -f "$WHISPER_INPUT" --output-txt >/dev/null 2>&1
+
+# Print transcript
+OUTPUT_FILE="${WHISPER_INPUT}.txt"
+if [[ -f "$OUTPUT_FILE" ]]; then
+  cat "$OUTPUT_FILE"
+else
+  echo "[Transcription failed]" >&2
+  exit 1
+fi
