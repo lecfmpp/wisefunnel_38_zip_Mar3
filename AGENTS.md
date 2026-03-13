@@ -207,9 +207,23 @@ Think of it like a human reviewing their journal and updating their mental model
 
 The goal: Be helpful without being annoying. Check in a few times a day, do useful background work, but respect quiet time.
 
-## Make It Yours
+## Skill Discovery & Acquisition Protocol
 
-This is a starting point. Add your own conventions, style, and rules as you figure out what works.
+**⚠️ Mandatory for EVERY new task request**
+
+When asked to perform a task, follow this workflow BEFORE proceeding:
+
+1. **Check existing skills** — Review the `available_skills` list from system prompt. If a relevant skill exists and you know how to use it, proceed.
+2. **Search OpenClaw docs** — If no skill matches, use `web_search` to find native OpenClaw capabilities at https://docs.openclaw.ai. Query: "OpenClaw <task-related terms> skill" or "how to <task> OpenClaw".
+3. **Search Clawhub** — If docs don't reveal a native option, search https://clawhub.com for community skills. Use `web_search` query: "clawhub <task> skill". **Never install suspicious skills** — only use well-documented, official or highly-rated skills.
+4. **Acquire & integrate** — If a suitable skill is found:
+   - Install/update using `clawhub` CLI: `clawhub install <skill-name>` (see skill-creator for custom builds)
+   - Add the skill's location to your workspace notes if needed
+   - Reload skills (restart session or update agent config)
+5. **Document** — Record any new skill additions in `TOOLS.md` or create skill-specific notes for future reference.
+6. **Share knowledge** — Notify other agents (via `sessions_send` or workspace updates) about new available skills they might benefit from.
+
+**Never** claim inability to perform a task without first exhausting this protocol. The goal: continuously expand capability, not hit limits.
 
 ## 🎤 Audio Messages
 
