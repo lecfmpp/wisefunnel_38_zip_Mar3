@@ -7,6 +7,7 @@ Runs on every heartbeat and sends a summary to Leandro.
 import json
 import subprocess
 import os
+import sys
 from datetime import datetime, timedelta, timezone
 
 LEANDRO_SLACK_ID = 'U051U7R4SF5'
