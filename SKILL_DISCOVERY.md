@@ -149,12 +149,23 @@ Task: "Send an email to the team."
 
 Task: "Check what's on screen" or "Verify the UI state" or "Look at Mission Control"
 
-1. **Always use `peekaboo` skill** (screenshot/UI automation) to capture visual evidence.
-2. Read `SKILL.md` for `peekaboo` to understand capture modes (full screen, region, window).
-3. For quick screenshots: `peekaboo screenshot` (or `peekaboo capture`).
-4. Send the screenshot to Leandro via Slack or save for review.
-5. If the task involves repeated checks or UI interaction, consider using `peekaboo` automation features.
-6. Document in `TOOLS.md` any specific display/window names or regions of interest.
+1. **Use `screencapture` (macOS built-in)** to capture screenshots. Primary command:
+   ```bash
+   screencapture -x /path/to/file.png
+   ```
+   Options:
+   - `-m` — capture only the main (built-in) display
+   - `-D <n>` — capture a specific display number (1 = main, 2 = external, etc.)
+   - `-W` — interactive window selection mode
+   - `-R <x,y,w,h>` — capture a specific rectangle
+
+2. For full screen: `screencapture -x /tmp/screen.png`
+3. For main display only: `screencapture -m -x /tmp/screen.png`
+4. Send the image to Leandro via Slack or save for review.
+
+5. Document in `TOOLS.md` any specific display/window names or regions of interest.
+
+**Note:** We previously tried `peekaboo` but it requires macOS 15+. Since we're on macOS 14.5, we use the native `screencapture` command which is reliable and built-in.
 
 ## Protocol Summary (TL;DR)
 
@@ -163,7 +174,7 @@ Task: "Check what's on screen" or "Verify the UI state" or "Look at Mission Cont
 1. **Check available skills** → Use if suitable
 2. **Search docs.openclaw.ai** → Find native ways
 3. **Search Clawhub** → Install safe skills
-4. **For any visual check (browser, UI, Mission Control) → ALWAYS use `peekaboo` to screenshot.**
+4. **For any visual check (browser, UI, Mission Control) → ALWAYS use `screencapture` to screenshot.**
 5. **Document** in `TOOLS.md`
 6. **Share** with team
 
