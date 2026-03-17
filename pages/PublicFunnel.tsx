@@ -82,6 +82,22 @@ const PublicFunnel: React.FC<PublicFunnelProps> = ({ domainSlug }) => {
         }
     }, [funnel?.id, activePage?.id, isPreview]);
 
+    // Track funnel visits (once per session)
+    useEffect(() => {
+        if (funnel?.id && !isPreview) {
+            const sessionKey = `wf_funnel_visit_${funnel.id}`;
+            if (sessionStorage.getItem(sessionKey)) return;
+            
+            try {
+                supabase.rpc('increment_funnel_visits', { funnel_id_input: funnel.id });
+                sessionStorage.setItem(sessionKey, 'true');
+                console.log('[PublicFunnel] Funnel visit counted');
+            } catch (err) {
+                console.error("Funnel visit recording error:", err);
+            }
+        }
+    }, [funnel?.id, isPreview]);
+
     // Fetch funnel data
     useEffect(() => {
         const fetchPublicFunnel = async () => {
