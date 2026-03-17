@@ -6,7 +6,7 @@ import { supabase } from '../services/supabaseClient';
 import { Funnel, FunnelPage } from '../types';
 import { Globe, AlertCircle, Loader2 } from 'lucide-react';
 import PreviewArea from '../components/PreviewArea';
-// import { sendLeadNotificationEmail } from '../services/emailService'; // Temporarily commented out for isolation
+import { upsertLead, type LeadUpsertResult, type LeadContactData } from '../services/leadService';
 import LogoIcon from '../components/LogoIcon';
 
 interface PublicFunnelProps {
@@ -23,27 +23,23 @@ const PublicFunnel: React.FC<PublicFunnelProps> = ({ domainSlug }) => {
     const [activePage, setActivePage] = useState<FunnelPage | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const isSubmittingLead = useRef(false); // Tracks if a lead submission is in progress
 
+    // Quiz answers accumulator - separate from contact data
     const [quizAnswers, setQuizAnswers] = useState<Record<string, any>>({});
+    
+    // Track the persisted lead after upsert (avoid duplicates)
+    const [currentLeadResult, setCurrentLeadResult] = useState<LeadUpsertResult | null>(null);
+
+    // Ref to prevent duplicate lead submissions
+    const isSubmittingLead = useRef(false);
 
     const funnelIdFromPath = params.funnelId;
     const isPreview = searchParams.get('preview') === 'true';
 
     const [resolvedFunnelId, setResolvedFunnelId] = useState<string | null>(null);
 
-    // State to hold the lead ID once created, to prevent duplicate submissions
-    const [currentLeadId, setCurrentLeadId] = useState<string | null>(() => {
-        if (funnelIdFromPath) return sessionStorage.getItem(`wf_active_lead_${funnelIdFromPath}`);
-        return null;
-    });
-
-    // Update lead ID if funnel is resolved and no current lead ID is set
-    useEffect(() => {
-        if (resolvedFunnelId && !currentLeadId) {
-            setCurrentLeadId(sessionStorage.getItem(`wf_active_lead_${resolvedFunnelId}`));
-        }
-    }, [resolvedFunnelId, currentLeadId]);
+    // Removed sessionStorage leadId tracking - we rely on database as source of truth
+    // currentLeadId state replaced by currentLeadResult from upsertLead()
 
     const getTargetViewMode = useCallback(() => {
         const urlOverride = searchParams.get('v');
@@ -198,100 +194,141 @@ const PublicFunnel: React.FC<PublicFunnelProps> = ({ domainSlug }) => {
 
     // --- Navigation and Submission Logic ---
 
-    // Direct Supabase lead insertion function
-    const syncLead = async (finalAnswers: Record<string, any>) => {
-        console.log("Attempting to sync lead...");
-
-        // Prevent duplicate submissions or submissions in preview/if already synced
-        if (!resolvedFunnelId || isPreview || isSubmittingLead.current || currentLeadId) {
-            console.log("Sync lead conditions not met. Details:", {
-                resolvedFunnelId,
-                isPreview,
-                isSubmitting: isSubmittingLead.current,
-                currentLeadId,
-            });
-            return;
-        }
+    /**
+     * Handle contact form submission
+     * Creates/updates lead immediately via server-side upsert
+     */
+    const handleContactFormSubmit = async (
+        contactData: LeadContactData, 
+        currentAnswers: Record<string, any> = {}
+    ): Promise<{ success: boolean; leadId?: string; error?: string }> => {
+        console.log("[PublicFunnel] Submitting contact form:", contactData);
         
+        if (!funnel || !activePage) {
+            return { success: false, error: "Page not ready" };
+        }
+
+        if (isSubmittingLead.current) {
+            return { success: false, error: "Already submitting" };
+        }
         isSubmittingLead.current = true;
-        console.log("Submitting lead with data:", finalAnswers);
 
         try {
-            const domain = window.location.hostname; // Get current domain
-            const { data, error } = await supabase.from('leads').insert([{
-                funnel_id: resolvedFunnelId,
-                workspace_id: funnel.workspaceId,
-                form_data: finalAnswers,
-                status: 'new', // Default status
-                domain: domain // Store the domain
-            }]).select().single(); // Ensure we get the inserted data back
+            // Extract contact fields from answers; remaining are quiz data
+            const { name, email, phone, ...quizData } = currentAnswers;
+            // Use the contactData passed (more direct) but also ensure normalization
+            const normalizedContact: LeadContactData = {
+                name: contactData.name.trim(),
+                email: contactData.email.trim().toLowerCase(),
+                phone: contactData.phone?.trim() || undefined
+            };
 
-            if (error) {
-                console.error('Supabase lead insert error:', error);
-                throw error; // Re-throw error for caller
-            }
+            const result = await upsertLead(resolvedFunnelId!, normalizedContact, quizData, {
+                showErrorsToUser: true
+            });
 
-            if (data) {
-                console.log("Lead synced successfully. Lead ID:", data.id);
-                setCurrentLeadId(data.id); // Store the new lead ID
-                sessionStorage.setItem(`wf_active_lead_${resolvedFunnelId}`, data.id); // Persist lead ID in session
-                
-                // IMPORTANT: Call email notification *after* successful lead save
-                // try {
-                //     await sendLeadNotificationEmail(funnel, data.id, finalAnswers);
-                // } catch (emailError) {
-                //     console.error("Failed to send lead notification email:", emailError);
-                // }
-            }
-        } catch (err) {
-            console.error('Error during syncLead:', err);
+            setCurrentLeadResult(result);
+            console.log("[PublicFunnel] Lead upserted successfully:", result);
+
+            return { success: true, leadId: result.leadId };
+
+        } catch (err: any) {
+            console.error("[PublicFunnel] Contact form submission failed:", err);
+            return { success: false, error: err.message || "Failed to save your information." };
         } finally {
-            console.log("Finished sync lead attempt.");
-            isSubmittingLead.current = false; // Reset loading state
+            isSubmittingLead.current = false;
         }
     };
 
-    // Handles moving to the next page or submitting the lead
+    /**
+     * Update quiz answers for the current lead
+     * Called when user answers quiz questions on any page
+     */
+    const handleQuizAnswersUpdate = async (answers: Record<string, any>) => {
+        setQuizAnswers(prev => ({ ...prev, ...answers }));
+
+        // If we already have a lead, update their quiz answers progressively
+        if (currentLeadResult?.leadId && currentLeadResult.contactData) {
+            try {
+                // Merge all answers and strip contact fields - only send quiz data
+                const allAnswers = { ...quizAnswers, ...answers };
+                const { name, email, phone, ...quizData } = allAnswers;
+                
+                await upsertLead(
+                    resolvedFunnelId!, 
+                    currentLeadResult.contactData, 
+                    quizData
+                );
+                console.log("[PublicFunnel] Updated quiz answers for lead:", currentLeadResult.leadId);
+            } catch (err) {
+                console.warn("[PublicFunnel] Failed to update quiz answers:", err);
+                // Non-fatal - will be retried on final submission
+            }
+        }
+    };
+
+    /**
+     * Main navigation handler called by PreviewArea
+     * @param answers - All collected answers so far (may include contact data on first submission)
+     */
     const handleNextPage = async (answers?: Record<string, any>) => {
-        console.log(`%c--- handleNextPage Triggered ---`, 'color: #3b82f6; font-weight: bold;');
-    
-        const currentAnswers = { ...quizAnswers, ...answers };
-        setQuizAnswers(currentAnswers);
-    
+        console.log(`%c--- handleNextPage Triggered ---`, 'color: #3b82f6; font-weight: bold;', { answers });
+
         if (!funnel || !activePage) {
             console.log("handleNextPage: Funnel or activePage is not set. Aborting.");
             return;
         }
-    
+
+        // Merge new answers with existing quiz answers
+        const currentAnswers = { ...quizAnswers, ...answers };
+        setQuizAnswers(currentAnswers);
+
+        // Extract contact data from answers if present (from contact form)
+        // The contact form fields are: name, email, phone (and possibly other)
+        const extractedContact: LeadContactData | null = 
+            (answers?.email && answers?.name) 
+                ? {
+                    name: String(answers.name).trim(),
+                    email: String(answers.email).trim().toLowerCase(),
+                    phone: answers.phone ? String(answers.phone).trim() : undefined
+                }
+                : null;
+
         const currentIndex = funnel.pages.findIndex(p => p.id === activePage.id);
         const nextPageIndex = currentIndex + 1;
         const isLastPage = nextPageIndex >= funnel.pages.length;
-    
-        console.log("Page Details:", {
+
+        console.log("Page Navigation:", {
             currentPage: activePage.title,
-            isLastPage: isLastPage
+            isLastPage,
+            hasContactData: !!extractedContact,
+            hasExistingLead: !!currentLeadResult
         });
-    
-        if (isLastPage) {
-            console.log(`%c--- Checking Lead Sync Conditions ---`, 'color: #f59e0b; font-weight: bold;');
-            const leadIdInSession = sessionStorage.getItem(`wf_active_lead_${resolvedFunnelId}`);
+
+        // If contact data is provided AND we haven't submitted a lead yet, upsert now
+        if (extractedContact && !currentLeadResult && !isContactSubmitting) {
+            console.log("%cSubmitting contact data via upsert...", 'color: #10b981; font-weight: bold;');
             
-            const conditions = {
-                'activePage.type !== "end"': activePage.type !== 'end',
-                '!leadIdInSession': !leadIdInSession,
-                '!isSubmittingLead.current': !isSubmittingLead.current,
-                '!isPreview': !isPreview
-            };
-    
-            console.table(conditions);
-    
-            if (!leadIdInSession && !isSubmittingLead.current && !isPreview) {
-                console.log("%cAll conditions met. Syncing lead...", 'color: #10b981; font-weight: bold;');
-                await syncLead(currentAnswers);
-            } else {
-                console.log("%cSkipping lead sync. One or more conditions not met.", 'color: #ef4444; font-weight: bold;');
+            const submitResult = await handleContactFormSubmit(extractedContact, currentAnswers);
+            
+            if (!submitResult.success) {
+                // Show error and abort navigation - user must fix
+                console.error("%cLead submission failed, aborting navigation.", 'color: #ef4444; font-weight: bold;', submitResult.error);
+                return;
             }
-        } else {
+            
+            console.log("%cLead submitted successfully, proceeding to next page.", 'color: #10b981; font-weight: bold;');
+        } else if (extractedContact && currentLeadResult) {
+            // Lead already exists, just update quiz answers progressively
+            console.log("%cLead already exists, updating quiz answers.", 'color: #6366f1; font-weight: bold;');
+            await handleQuizAnswersUpdate(currentAnswers);
+        } else if (!extractedContact && isLastPage && !currentLeadResult) {
+            // Reached last page but no contact data? This shouldn't happen in a properly configured funnel
+            console.warn("%cReached final page without contact data. Check funnel structure.", 'color: #f59e0b; font-weight: bold;');
+        }
+
+        // Navigate to next page if not last
+        if (!isLastPage) {
             const nextPage = funnel.pages[nextPageIndex];
             const funnelSlug = funnel.slug || funnel.name.toLowerCase().replace(/\s+/g, '-');
             const pageSlug = nextPage.slug || nextPage.title.toLowerCase().replace(/\s+/g, '-');
@@ -300,6 +337,8 @@ const PublicFunnel: React.FC<PublicFunnelProps> = ({ domainSlug }) => {
             
             console.log(`%cNavigating to next page: ${nextPage.title}`, 'color: #6366f1; font-weight: bold;');
             navigate(`${path}${search ? `?${search}` : ''}`, { replace: isPreview });
+        } else {
+            console.log("%cReached final page. Lead processing complete.", 'color: #10b981; font-weight: bold;');
         }
     };
 
@@ -314,7 +353,9 @@ const PublicFunnel: React.FC<PublicFunnelProps> = ({ domainSlug }) => {
             onUpdateElement={() => {}} // Not needed for public view
             isLive={true}
             isPreview={isPreview}
-            onNextPage={handleNextPage} // Handler for navigating between pages
+            onNextPage={handleNextPage} // Handler for navigating between pages and lead submission
+            quizAnswers={quizAnswers}
+            setQuizAnswers={setQuizAnswers}
         />
     );
 };
